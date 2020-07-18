@@ -1,14 +1,30 @@
-from flask import Flask , request , jsonify
+from flask import Flask , request , jsonify , render_template
 from flask_sqlalchemy import SQLAlchemy
 
+from flask_jwt_extended import (
+    JWTManager, jwt_required, create_access_token,
+    get_jwt_identity
+)
+import bcrypt
 app = Flask(__name__)
 
 app.config["SQLALCHEMY_DATABASE_URI"] = 'sqlite:///data-dev.db'
-
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
 app.config['JSON_SORT_KEYS']= False
+
+'''app.config['MAIL_SEVER']= 
+app.config['MAIL_PORT']=
+app.config['MAIL_USERNAME']=
+app.config['MAIL_PASSWORD']=
+app.config['MAIL_USE_TLS'] = True
+app.config['MAIL_USE_SSL']= False'''
+
+app.config['JWT_SECRET_KEY'] = 'senha'  
+jwt = JWTManager(app)
+
+
 db = SQLAlchemy(app)
+
 
 class User(db.Model):
     __tabelname__= 'users'
@@ -17,11 +33,15 @@ class User(db.Model):
     email = db.Column(db.String(20), unique = True , nullable= False)
     idade = db.Column(db.Integer , default=0)
 
+    password_hash=db.Column(db.String(128), nullable=False)
+    active =db.Column(db.Boolean, default=False)
+
     def json(self):
         user_json = { 'id': self.id,
                     'name': self.name,
                     'email': self.email,
                     'idade': self.idade
+                    
 
         }
         return user_json
@@ -36,20 +56,34 @@ def create():
     name = data.get("name")
     email = data.get("email")
     idade = data.get("idade")
+    password= data.get('password')
 
+    
     #Checando se não falta algum dado essencial como nome e email
-    if not name or not email:
+    if not name or not email or not password:
         return {'erro': 'Dados insuficientes'}, 400
 
-    #Checando a existência de algum user no bd com o mesmo email, se houver 1 user já com o email, impedir o cadastro e mostrar o erro
-    if  db.session.query(User).filter_by(email=email).count() < 1:
-        user = User(name = name, email = email , idade=idade)
-        db.session.add(user)
-        db.session.commit()
-    
-    else:
-        return  "Email já em uso" , 400
 
+    user_check = User.query.filter_by(email=email).first()
+
+    if user_check:
+        return {'error': 'Usuário já cadastrado'}, 400
+    #Checando a existência de algum user no bd com o mesmo email, se houver 1 user já com o email, impedir o cadastro e mostrar o erro
+    
+    password_hash = bcrypt.hashpw(password.encode() , bcrypt.gensalt())
+       
+       
+    user = User(name = name, email = email , idade=idade , password_hash=password_hash)
+    db.session.add(user)
+    db.session.commit()
+
+    '''msg=Message(sender='',
+                recipients=[email],
+                subject='Bem Vindo!',
+                html=render_template('' , name=name))
+
+    mail.send(msg)    '''        
+    
     return user.json() ,200
 
 @app.route('/users/', methods=['GET'] )
@@ -59,10 +93,33 @@ def index(): #mostra todos os usuários
 
     return jsonify([user.json() for user in users]) , 200
 
+@app.route('/login', methods=['POST'])
+def login():
+    if not request.is_json:
+        return jsonify({"msg": "Missing JSON in request"}), 400
 
-@app.route('/users/<int:id>' , methods=["GET", "PUT" , "PATCH" , "DELETE" , "POST"])
+    email = request.json.get('email', None)
+    password = request.json.get('password', None)
+    if not email:
+        return jsonify({"msg": "Falta o email"}), 400
+    if not password:
+        return jsonify({"msg": "Falta a senha"}), 400
+
+
+    access_token = create_access_token(identity=email)
+    return jsonify(access_token=access_token), 200
+
+   
+@app.route('/users/<int:id>' , methods=["GET", "PUT" , "PATCH" , "DELETE" , ])
+@jwt_required
 
 def user_detail(id):
+    #Checar se a pessoa fez o login para poder ou não deixar ela fazer as ações
+    user = User.query.get_or_404(id)
+    current_user = get_jwt_identity()
+    if user.email != current_user:
+        return {'error' : 'Acesso não permitido'} , 400
+   
     if request.method == 'GET':
         user = User.query.get_or_404(id)
         return user.json(), 200
@@ -72,6 +129,9 @@ def user_detail(id):
         
         # Pego os dados do body
         data = request.json
+
+        if not data :
+            return {'error': 'Requisição precisa de body'} , 400
         # Pego parte a parte os argumentos do body
         novoname = data.get("name")
         novoemail = data.get("email")
@@ -81,6 +141,7 @@ def user_detail(id):
         if not novoname or not novoemail:
             return   'Erro: Dados insuficientes', 400
 
+        
         #Recebo o user com a id da requisição
         user = User.query.get_or_404(id)
         
@@ -100,14 +161,17 @@ def user_detail(id):
     elif request.method == 'PATCH':
         data = request.json
 
-        #Pego o dado do novo email
-        novoemail= data.get("email")
+        if not data:
+            return {'error': 'Requisição precisa de body'}, 400
 
-        #Recebo o email antigo
-        user = User.query.get_or_404(id)
+        email = data.get('email')
 
-        #Coloco o email novo no lugar do antigo
-        user.email= novoemail
+        if User.query.filter_by(email=email).first() and email != user.email:
+            return {'error': 'Email já cadastrado'}, 400
+
+        user.name = data.get('name', user.name)
+        user.email = data.get('email', user.email)
+        user.idade = data.get('idade', user.idade)
 
         #Adiciono esse novo user que apenas te o email alterado no mesmo id original
         db.session.add(user)
