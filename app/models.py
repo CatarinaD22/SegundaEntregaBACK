@@ -16,12 +16,11 @@ class User(db.Model):
                     'name': self.name,
                     'email': self.email
                    
-                    
-
-        }
+                    }
         return user_json
 
- class Product(db.Model):
+
+class Product(db.Model):
 
     __tablename__ = 'products'
 
@@ -39,3 +38,43 @@ class User(db.Model):
                 'desciption': self.description,
                 'id': self.id,
                 'owner': self.owner.json()}       
+
+
+class Post(db.Model):
+    __tablename__='posts'
+
+    id=db.Column(db.Integer, primary_key=True)
+    postdescription = db.Column(db.String(5000), nullable= True)
+
+    owner_name = db.Column(db.String(200), db.Foreingkey('users.name'))
+    owner_id= db.Column(db.Integer, db.ForeingKey('users.id'))
+
+    def json(self):
+        
+        return { 'postdescription': self.postdescription ,
+                 'id': self.id ,
+                 'owner': self.owner_id
+                }
+
+
+
+class Interaction(db.Model):
+    __tablename__='interactions'
+
+    id=db.Column(db.Integer, primary_key=True)
+    comments=db.Column(db.String(480), nullable=False)
+    liked=db.Column(db.Boolean , default=False)
+
+    owner_photos= db.Column(db.Integer , db.ForeignKey('photos.id'))
+    owner_users = db.Column(db.Integer, db.ForeingKey('user.id'))
+
+    def json(self):
+
+        return{
+                'comments' : self.comements ,
+                'liked' : self.liked ,
+                'id' : self.id ,
+                'owner_users' : self.owner_users.json()
+                'owner_ photos' : self.owner_photos.json()
+        
+        }

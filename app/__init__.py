@@ -4,7 +4,7 @@ from .extensions import db , migrate, jwt
 from .user.controllers import user_api
 from .auth.controllers import auth_api
 from .product.controllers import product_api
-
+from .interactions.controllers import comment_api
 
 def create_app():
     app = Flask(__name__)
